@@ -1,0 +1,80 @@
+ARG BASEIMAGE_VERSION=r32.5.0
+FROM nvcr.io/nvidia/l4t-base:${BASEIMAGE_VERSION} AS base_image
+
+# Set DEBIAN_FRONTEND to skip any interactive post-install configuration steps
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get -qqy update && \
+    apt-get -y --no-install-recommends install \
+        curl \
+        ca-certificates \
+        build-essential && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN curl -fsSL https://cmake.org/files/v3.19.0/cmake-3.19.0.tar.gz | \
+        tar xz && \
+        cd cmake-3.19.0 && \
+        ./configure --prefix=/opt/cmake && \
+        make -j2 && \
+        make install && \
+        cd .. && \
+        rm -r cmake-3.19.0
+
+RUN curl -fsSL https://github.com/google/protobuf/releases/download/v3.8.0/protobuf-cpp-3.8.0.tar.gz \
+    | tar xz && \
+    cd protobuf-3.8.0 && \
+    ./configure --prefix=/opt/protobuf && \
+    make -j2 && \
+    make install && \
+    cd .. && \
+    rm -rf protobuf-3.8.0
+
+
+RUN apt-get -qqy update && \
+    apt-get -y --no-install-recommends install \
+        wget \
+        curl \
+        ca-certificates \
+        ca-certificates-java \
+        software-properties-common \
+        git \
+        build-essential \
+        gnupg-agent \
+        dirmngr \
+        openjdk-8-jdk-headless \
+        libopenblas-dev \
+        maven && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    update-java-alternatives -s java-1.8.0-openjdk-arm64 && \
+    ln -s /opt/cmake/bin/* /usr/local/bin
+
+# Additional packages for javacpp builds
+RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys F60F4B3D7FA2AF80 && \
+    apt-get -qqy update && \
+    apt-get -y --no-install-recommends install \
+        gcc-arm* \
+        gfortran \
+        cuda-cudart-dev-10-2 \
+        cuda-cublas-dev-10-2 && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# RUN add-apt-repository ppa:ubuntu-toolchain-r/test && \
+#     apt-get -qqy update && \
+#     apt-get -y --no-install-recommends install \
+#         gcc-8 \
+#         g++-8 && \
+#     apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Workaround to fix: CMake Error: The following variables are used in this project, but they are set to NOTFOUND | CUDA_cublas_LIBRARY (ADVANCED) and CUDA_cusolver_LIBRARY (ADVANCED)
+RUN cp -a /usr/local/cuda-10.2/lib64/stubs/* /usr/local/cuda-10.2/lib64/ && \
+    ln -s /usr/local/cuda-10.2/lib64/libcusolver.so /usr/local/cuda-10.2/lib64/libcusolver.so.10.2
+
+# RUN mkdir -p .gnupg
+
+ENV PATH=/opt/cmake/bin:/opt/protobuf/bin:${PATH} \
+    JAVA_OPTS="-XX:+UnlockExperimentalVMOptions -XX:+UseCGroupMemoryLimitForHeap ${JAVA_OPTS}" \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
+
+COPY ./run-on-arch-install.sh /root/run-on-arch-install.sh
+RUN chmod +x /root/run-on-arch-install.sh && /root/run-on-arch-install.sh
